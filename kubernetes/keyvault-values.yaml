@@ -1,7 +1,7 @@
 # Copy this file to keyvault-values.yaml. That file is gitignored.
 azure:
   subscriptionId: "REPLACE_ME_AZURE_SUBSCRIPTION_ID"
-  keyVaultName: "REPLACE_ME_KEY_VAULT_NAME"
+  keyVaultName: "keyvaultdemo-1"
 
 # Values in this section are sensitive application credentials.
 secrets:
@@ -34,4 +34,4 @@ config:
   config-sentinel-audit-service-url: "http://audit-service.sentinel-app.svc.cluster.local"
   config-sentinel-relationship-service-url: "http://relationship-service.sentinel-app.svc.cluster.local"
   config-sentinel-login-blob-container-name: "sentinel-login-events"
-  config-azure-tenant-id: "REPLACE_ME_PROVIDER_ENTRA_TENANT_ID"
+  config-azure-tenant-id: "6206e18c-53ff-46fb-856b-d8435455825a"
