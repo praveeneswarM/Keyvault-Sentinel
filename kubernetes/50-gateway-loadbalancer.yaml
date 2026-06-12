@@ -1,0 +1,149 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sentinel-gateway-nginx
+  namespace: sentinel-app
+data:
+  nginx.conf: |
+    events {}
+
+    http {
+      server_tokens off;
+
+      upstream web { server web.sentinel-app.svc.cluster.local:80; }
+      upstream identity { server identity-service.sentinel-app.svc.cluster.local:80; }
+      upstream inventory { server inventory-service.sentinel-app.svc.cluster.local:80; }
+      upstream relationships { server relationship-service.sentinel-app.svc.cluster.local:80; }
+      upstream intelligence { server change-intelligence-service.sentinel-app.svc.cluster.local:80; }
+      upstream operations { server operations-service.sentinel-app.svc.cluster.local:80; }
+      upstream audit { server audit-service.sentinel-app.svc.cluster.local:80; }
+
+      server {
+        listen 8080;
+        return 308 https://$host$request_uri;
+      }
+
+      server {
+        listen 8443 ssl;
+        client_max_body_size 2m;
+
+        ssl_certificate /etc/nginx/tls/tls.crt;
+        ssl_certificate_key /etc/nginx/tls/tls.key;
+        ssl_protocols TLSv1.2 TLSv1.3;
+        ssl_prefer_server_ciphers off;
+
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Correlation-ID $request_id;
+
+        location = /api/v1/auth/health/live { proxy_pass http://identity/health/live; }
+        location = /api/v1/auth/health/ready { proxy_pass http://identity/health/ready; }
+        location /api/v1/auth/ { proxy_pass http://identity; }
+        location /auth/ { proxy_pass http://identity; }
+        location /api/v1/tenants/ { proxy_pass http://identity; }
+        location /api/v1/inventory/ { proxy_pass http://inventory; }
+        location /api/v1/relationships { proxy_pass http://relationships; }
+        location /api/v1/analysis/ { proxy_pass http://intelligence; }
+        location /api/v1/operations { proxy_pass http://operations; }
+        location /api/v1/audit/ { proxy_pass http://audit; }
+        location / { proxy_pass http://web; }
+      }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sentinel-gateway
+  namespace: sentinel-app
+  labels:
+    app.kubernetes.io/name: sentinel-gateway
+    app.kubernetes.io/part-of: sentinel
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: sentinel-gateway
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: sentinel-gateway
+        app.kubernetes.io/part-of: sentinel
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101
+        runAsGroup: 101
+        fsGroup: 101
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: nginx
+          image: nginx:1.27-alpine
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+            - name: https
+              containerPort: 8443
+          volumeMounts:
+            - name: nginx-config
+              mountPath: /etc/nginx/nginx.conf
+              subPath: nginx.conf
+              readOnly: true
+            - name: tls
+              mountPath: /etc/nginx/tls
+              readOnly: true
+            - name: cache
+              mountPath: /var/cache/nginx
+            - name: run
+              mountPath: /var/run
+            - name: tmp
+              mountPath: /tmp
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+      volumes:
+        - name: nginx-config
+          configMap:
+            name: sentinel-gateway-nginx
+        - name: tls
+          secret:
+            secretName: sentinel-gateway-tls
+        - name: cache
+          emptyDir: {}
+        - name: run
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sentinel-gateway
+  namespace: sentinel-app
+  labels:
+    app.kubernetes.io/name: sentinel-gateway
+    app.kubernetes.io/part-of: sentinel
+spec:
+  type: LoadBalancer
+  selector:
+    app.kubernetes.io/name: sentinel-gateway
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+    - name: https
+      port: 443
+      targetPort: https
